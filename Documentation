@@ -1,0 +1,27 @@
+Certainly! Here's the list of endpoints in one continuous order:
+
+1. `/generate-code`: Generate code based on provided input.
+2. `/create-file`: Create a new file with specified content.
+3. `/create-folder`: Create a new folder with specified name.
+4. `/get-file`: Retrieve content of a specified file.
+5. `/list-folder`: List files and subfolders within a specified folder.
+6. `/update-file`: Update content of a specified file.
+7. `/update-folder`: Update content of a specified folder.
+8. `/delete-file`: Delete a specified file.
+9. `/delete-folder`: Delete a specified folder and its contents.
+10. `/copy-file`: Copy a specified file to a destination directory.
+11. `/copy-folder`: Copy a specified folder to a destination directory.
+12. `/move-file`: Move a specified file to a destination directory.
+13. `/move-folder`: Move a specified folder to a destination directory.
+14. `/get-file-metadata`: Retrieve metadata information about a specified file.
+15. `/get-folder-metadata`: Retrieve metadata information about a specified folder.
+16. `/download-file`: Download a specified file.
+17. `/zip-folder`: Create a zip archive of a specified folder.
+18. `/search-file`: Search for files matching specified criteria.
+19. `/scrape-webpage`: Scrape content from a specified webpage.
+20. `/get-webpage-metadata`: Retrieve metadata information about a specified webpage.
+21. `/search-website`: Search a specified website for relevant content.
+22. `/analyze-webpage`: Analyze content and characteristics of a specified webpage.
+23. `/monitor-website`: Monitor a specified website for changes or updates.
+
+This comprehensive list covers a wide range of functionalities for your API, including file and folder manipulation, website interaction, and information retrieval. Let me know if you need further clarification on any of these endpoints or if you have any other questions!
