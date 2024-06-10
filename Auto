@@ -1,0 +1,718 @@
+# project/app.py
+
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_user import UserManager, UserMixin, SQLAlchemyAdapter
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_restful import Api, Resource
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/neobank'
+app.config['SECRET_KEY'] = 'super-secret'
+app.config['CSRF_ENABLED'] = True
+app.config['USER_ENABLE_EMAIL'] = False
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+api = Api(app)
+
+# Models
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    active = db.Column(db.Boolean(), nullable=False, server_default='0')
+
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
+    balance = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+# Setup Flask-User
+db_adapter = SQLAlchemyAdapter(db, User)
+user_manager = UserManager(db_adapter, app)
+
+# Resources
+class RegisterAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+        new_user = User(username=username, email=email, password_hash=password_hash)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": "User registered successfully"}), 201
+
+class LoginAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            access_token = create_access_token(identity={'username': user.username})
+            return jsonify(access_token=access_token), 200
+        else:
+            return jsonify({"message": "Invalid credentials"}), 401
+
+class ProfileAPI(Resource):
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        return jsonify(id=user.id, username=user.username, email=user.email, created_at=user.created_at)
+
+class AccountAPI(Resource):
+    @jwt_required()
+    def post(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        account_number = request.json.get('account_number')
+        new_account = Account(user_id=user.id, account_number=account_number)
+        db.session.add(new_account)
+        db.session.commit()
+        return jsonify({"message": "Account created successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        accounts = Account.query.filter_by(user_id=user.id).all()
+        return jsonify([{"id": account.id, "account_number": account.account_number, "balance": account.balance} for account in accounts])
+
+class TransactionAPI(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        account_id = data.get('account_id')
+        amount = data.get('amount')
+        type = data.get('type')
+
+        new_transaction = Transaction(account_id=account_id, amount=amount, type=type)
+        account = Account.query.filter_by(id=account_id).first()
+        if type == 'credit':
+            account.balance += amount
+        elif type == 'debit' and account.balance >= amount:
+            account.balance -= amount
+        else:
+            return jsonify({"message": "Insufficient balance"}), 400
+
+        db.session.add(new_transaction)
+        db.session.commit()
+        return jsonify({"message": "Transaction completed successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        account_id = request.args.get('account_id')
+        transactions = Transaction.query.filter_by(account_id=account_id).all()
+        return jsonify([{"id": txn.id, "amount": txn.amount, "type": txn.type, "created_at": txn.created_at} for txn in transactions])
+
+# Add Resources to API
+api.add_resource(RegisterAPI, '/register')
+api.add_resource(LoginAPI, '/login')
+api.add_resource(ProfileAPI, '/profile')
+api.add_resource(AccountAPI, '/accounts')
+api.add_resource(TransactionAPI, '/transactions')
+
+if __name__ == '__main__':
+    app.run(debug=True) # project/app.py
+
+To create a standalone neobank account with a banking API, we’ll need to follow a series of steps to ensure the project is comprehensive and functional. Here’s a detailed plan:
+
+	1.	Define the Requirements:
+	•	User registration and authentication.
+	•	Account management (create, retrieve, update, delete).
+	•	Transaction management (create, retrieve, update, delete).
+	•	Balance management (check balance).
+	•	Integration with a banking API for actual banking operations.
+	2.	Set Up the Project:
+	•	Choose a tech stack (e.g., Python with Django/Flask for backend, PostgreSQL for the database).
+	•	Set up the project environment (using virtualenv, pip, etc.).
+	3.	Design the Database Schema:
+	•	Users table.
+	•	Accounts table.
+	•	Transactions table.
+	4.	Implement Authentication and Authorization:
+	•	Use JWT for token-based authentication.
+	5.	Implement API Endpoints:
+	•	User endpoints: register, login, profile.
+	•	Account endpoints: create, retrieve, update, delete, check balance.
+	•	Transaction endpoints: create, retrieve, update, delete.
+	6.	Integrate with a Banking API:
+	•	Mock integration for development.
+	•	Real integration for production.
+	7.	Test the API:
+	•	Write unit tests for each endpoint.
+	•	Perform integration tests with the banking API.
+	8.	Documentation:
+	•	Create API documentation using Swagger or similar tools.
+
+Let’s start by writing the pseudocode for the project:
+
+Pseudocode
+
+	1.	Project Setup:
+	•	Initialize the project with Flask.
+	•	Set up PostgreSQL as the database.
+	•	Configure environment variables for database connection.
+	2.	Database Schema:
+	•	Users table: id, username, password_hash, email, created_at.
+	•	Accounts table: id, user_id, account_number, balance, created_at.
+	•	Transactions table: id, account_id, amount, type (credit/debit), created_at.
+	3.	Authentication:
+	•	User registration endpoint.
+	•	User login endpoint.
+	•	Middleware to protect routes.
+	4.	Account Management:
+	•	Create account endpoint.
+	•	Retrieve account details endpoint.
+	•	Update account endpoint.
+	•	Delete account endpoint.
+	•	Check balance endpoint.
+	5.	Transaction Management:
+	•	Create transaction endpoint.
+	•	Retrieve transactions endpoint.
+	•	Update transaction endpoint.
+	•	Delete transaction endpoint.
+	6.	Banking API Integration:
+	•	Mock API for local development.
+	•	Real API integration for production.
+
+Final Code
+
+Let’s start by implementing the basic structure and user authentication:
+
+# project/app.py
+
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/neobank'
+app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this to a secure key
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+
+# Models
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
+    balance = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String(10), nullable=False)  # credit or debit
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+# Routes
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    email = data.get('email')
+    password = data.get('password')
+    password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+    
+    new_user = User(username=username, email=email, password_hash=password_hash)
+    db.session.add(new_user)
+    db.session.commit()
+    
+    return jsonify({"message": "User registered successfully"}), 201
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    
+    user = User.query.filter_by(username=username).first()
+    if user and bcrypt.check_password_hash(user.password_hash, password):
+        access_token = create_access_token(identity={'username': user.username})
+        return jsonify(access_token=access_token), 200
+    else:
+        return jsonify({"message": "Invalid credentials"}), 401
+
+@app.route('/profile', methods=['GET'])
+@jwt_required()
+def profile():
+    current_user = get_jwt_identity()
+    user = User.query.filter_by(username=current_user['username']).first()
+    return jsonify(id=user.id, username=user.username, email=user.email, created_at=user.created_at)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+This code sets up a basic Flask application with user registration and login functionality, using JWT for authentication. Next steps would include creating the account and transaction management endpoints, integrating with a banking API, and writing tests.
+
+Next Steps:
+a. Implement account management endpoints (create, retrieve, update, delete, check balance).
+b. Implement transaction management endpoints (create, retrieve, update, delete).
+
+Using existing GitHub repositories can speed up the development process by leveraging pre-built components for user authentication, account management, and transaction handling. Below, I will integrate a few popular repositories and frameworks to create a full-fledged neobank API.
+
+We’ll use the following repositories:
+
+	1.	Flask User Authentication: GitHub - flask-user
+	2.	Flask REST API: GitHub - flask-restful
+	3.	SQLAlchemy Models: GitHub - flask-sqlalchemy
+
+Updated Plan:
+
+	1.	Project Setup:
+	•	Clone and set up the Flask User Authentication and Flask REST API repositories.
+	•	Integrate them to create a cohesive neobank API.
+	2.	Database Schema:
+	•	Reuse the models from the repositories and extend them as needed.
+	3.	Authentication:
+	•	Use Flask-User for authentication and user management.
+	4.	Account and Transaction Management:
+	•	Implement endpoints for account and transaction management using Flask-RESTful.
+	5.	Banking API Integration:
+	•	Mock API for local development.
+	•	Real API integration for production.
+
+Integrating Repositories
+
+	1.	Clone Repositories:
+
+git clone https://github.com/lingthio/Flask-User.git
+git clone https://github.com/flask-restful/flask-restful.git
+cd Flask-User
+pip install -r requirements.txt
+
+	2.	Set Up Project:
+
+# project/app.py
+
+from flask import Flask, request, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from flask_user import UserManager, UserMixin, SQLAlchemyAdapter
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_restful import Api, Resource
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://username:password@localhost/neobank'
+app.config['SECRET_KEY'] = 'super-secret'
+app.config['CSRF_ENABLED'] = True
+app.config['USER_ENABLE_EMAIL'] = False
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+api = Api(app)
+
+# Models
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    active = db.Column(db.Boolean(), nullable=False, server_default='0')
+
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
+    balance = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+# Setup Flask-User
+db_adapter = SQLAlchemyAdapter(db, User)
+user_manager = UserManager(db_adapter, app)
+
+# Resources
+class RegisterAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+        new_user = User(username=username, email=email, password_hash=password_hash)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": "User registered successfully"}), 201
+
+class LoginAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            access_token = create_access_token(identity={'username': user.username})
+            return jsonify(access_token=access_token), 200
+        else:
+            return jsonify({"message": "Invalid credentials"}), 401
+
+class ProfileAPI(Resource):
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        return jsonify(id=user.id, username=user.username, email=user.email, created_at=user.created_at)
+
+class AccountAPI(Resource):
+    @jwt_required()
+    def post(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        account_number = request.json.get('account_number')
+        new_account = Account(user_id=user.id, account_number=account_number)
+        db.session.add(new_account)
+        db.session.commit()
+        return jsonify({"message": "Account created successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        accounts = Account.query.filter_by(user_id=user.id).all()
+        return jsonify([{"id": account.id, "account_number": account.account_number, "balance": account.balance} for account in accounts])
+
+class TransactionAPI(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        account_id = data.get('account_id')
+        amount = data.get('amount')
+        type = data.get('type')
+
+        new_transaction = Transaction(account_id=account_id, amount=amount, type=type)
+        account = Account.query.filter_by(id=account_id).first()
+        if type == 'credit':
+            account.balance += amount
+        elif type == 'debit' and account.balance >= amount:
+            account.balance -= amount
+        else:
+            return jsonify({"message": "Insufficient balance"}), 400
+
+        db.session.add(new_transaction)
+        db.session.commit()
+        return jsonify({"message": "Transaction completed successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        account_id = request.args.get('account_id')
+        transactions = Transaction.query.filter_by(account_id=account_id).all()
+        return jsonify([{"id": txn.id, "amount": txn.amount, "type": txn.type, "created_at": txn.created_at} for txn in transactions])
+
+# Add Resources to API
+api.add_resource(RegisterAPI, '/register')
+api.add_resource(LoginAPI, '/login')
+api.add_resource(ProfileAPI, '/profile')
+api.add_resource(AccountAPI, '/accounts')
+api.add_resource(TransactionAPI, '/transactions')
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+Next Steps:
+
+a. Test the API using tools like Postman or Insomnia.
+b. Write unit and integration tests for the API endpoints using pytest or unittest.
+
+To automate the entire process of setting up a neobank API, you can use a combination of scripts and tools to handle project setup, dependency installation, database migrations, and API initialization. Below, I’ll outline a step-by-step guide, including shell scripts and configuration files to automate the setup:
+
+	1.	Set Up the Project Directory Structure:
+	•	Create necessary folders and files for the project.
+	2.	Automated Script:
+	•	Use a shell script to clone the necessary repositories, set up a virtual environment, install dependencies, configure the database, and run the application.
+	3.	Docker Setup:
+	•	Use Docker to containerize the application, ensuring a consistent environment.
+	4.	Database Migrations:
+	•	Use Alembic for database migrations.
+	5.	CI/CD Pipeline:
+	•	Set up a CI/CD pipeline with GitHub Actions to automate testing and deployment.
+
+Step-by-Step Guide
+
+1. Project Directory Structure
+
+Create the following structure:
+
+neobank/
+│
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── init_db.sh
+├── start.sh
+├── app/
+│   ├── __init__.py
+│   ├── models.py
+│   ├── routes.py
+│   ├── config.py
+│   ├── migrations/
+│   └── templates/
+
+# Dockerfile
+
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt requirements.txt
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["sh", "start.sh"]
+
+# docker-compose.yml
+
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: neobank_user
+      POSTGRES_PASSWORD: neobank_pass
+      POSTGRES_DB: neobank_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+    build: .
+    command: sh -c "sh start.sh"
+    ports:
+      - "5000:5000"
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgresql://neobank_user:neobank_pass@db:5432/neobank_db
+
+volumes:
+  postgres_data:
+
+
+
+Flask==2.0.1
+Flask-SQLAlchemy==2.5.1
+Flask-User==1.0.2.1
+Flask-JWT-Extended==4.3.1
+Flask-RESTful==0.3.9
+Flask-Bcrypt==0.7.1
+psycopg2-binary==2.9.1
+
+
+#!/bin/bash
+
+flask db init
+flask db migrate
+flask db upgrade
+
+#!/bin/bash
+
+# Wait for the database to be ready
+while !</dev/tcp/db/5432; do
+  echo "Waiting for database..."
+  sleep 1
+done
+
+# Initialize the database
+sh init_db.sh
+
+# Run the application
+flask run --host=0.0.0.0
+
+
+from flask import Flask
+from flask_sqlalchemy import SQLAlchemy
+from flask_user import UserManager, SQLAlchemyAdapter
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager
+from flask_restful import Api
+from .config import Config
+
+app = Flask(__name__)
+app.config.from_object(Config)
+
+db = SQLAlchemy(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
+api = Api(app)
+
+from .models import User, Account, Transaction
+db_adapter = SQLAlchemyAdapter(db, User)
+user_manager = UserManager(db_adapter, app)
+
+from .routes import initialize_routes
+initialize_routes(api)
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+import os
+
+class Config:
+    SECRET_KEY = os.getenv('SECRET_KEY', 'super-secret')
+    SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL', 'sqlite:///neobank.db')
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    USER_ENABLE_EMAIL = False
+    USER_APP_NAME = "Neobank"
+
+
+
+from . import db
+from flask_user import UserMixin
+
+class User(db.Model, UserMixin):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(128), nullable=False)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    active = db.Column(db.Boolean(), nullable=False, server_default='0')
+
+class Account(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    account_number = db.Column(db.String(20), unique=True, nullable=False)
+    balance = db.Column(db.Float, default=0.0)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+class Transaction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey('account.id'), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    type = db.Column(db.String(10), nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+
+from flask import request, jsonify
+from flask_restful import Resource
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
+from . import db, bcrypt
+from .models import User, Account, Transaction
+
+class RegisterAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        email = data.get('email')
+        password = data.get('password')
+        password_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+
+        new_user = User(username=username, email=email, password_hash=password_hash)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({"message": "User registered successfully"}), 201
+
+class LoginAPI(Resource):
+    def post(self):
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password_hash, password):
+            access_token = create_access_token(identity={'username': user.username})
+            return jsonify(access_token=access_token), 200
+        else:
+            return jsonify({"message": "Invalid credentials"}), 401
+
+class ProfileAPI(Resource):
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        return jsonify(id=user.id, username=user.username, email=user.email, created_at=user.created_at)
+
+class AccountAPI(Resource):
+    @jwt_required()
+    def post(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        account_number = request.json.get('account_number')
+        new_account = Account(user_id=user.id, account_number=account_number)
+        db.session.add(new_account)
+        db.session.commit()
+        return jsonify({"message": "Account created successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        current_user = get_jwt_identity()
+        user = User.query.filter_by(username=current_user['username']).first()
+        accounts = Account.query.filter_by(user_id=user.id).all()
+        return jsonify([{"id": account.id, "account_number": account.account_number, "balance": account.balance} for account in accounts])
+
+class TransactionAPI(Resource):
+    @jwt_required()
+    def post(self):
+        data = request.get_json()
+        account_id = data.get('account_id')
+        amount = data.get('amount')
+        type = data.get('type')
+
+        new_transaction = Transaction(account_id=account_id, amount=amount, type=type)
+        account = Account.query.filter_by(id=account_id).first()
+        if type == 'credit':
+            account.balance += amount
+        elif type == 'debit' and account.balance >= amount:
+            account.balance -= amount
+        else:
+            return jsonify({"message": "Insufficient balance"}), 400
+
+        db.session.add(new_transaction)
+        db.session.commit()
+        return jsonify({"message": "Transaction completed successfully"}), 201
+
+    @jwt_required()
+    def get(self):
+        account_id = request.args.get('account_id')
+        transactions = Transaction.query.filter_by(account_id=account_id).all()
+        return jsonify([{"id": txn.id, "amount": txn.amount, "type": txn.type, "created_at": txn.created_at} for txn in transactions])
+
+def initialize_routes(api):
+    api.add_resource(RegisterAPI, '/register')
+    api.add_resource(LoginAPI, '/login')
+    api.add_resource(ProfileAPI, '/profile')
+    api.add_resource(AccountAPI, '/accounts')
+    api.add_resource(TransactionAPI, '/transactions')
+
+docker-compose build
+docker-compose up
