@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Quantum Cash</title>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;700&family=Roboto&display=swap" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Welcome to Quantum Cash</h1>
+    </header>
+    <nav>
+        <a href="{{ url_for('general.index') }}">Home</a>
+        <a href="{{ url_for('user.user_panel') }}">User Panel</a>
+        <a href="{{ url_for('admin.admin_panel') }}">Admin Panel</a>
+        <a href="{{ url_for('general.about') }}">About Us</a>
+        <a href="{{ url_for('general.contact') }}">Contact Us</a>
+        <a href="{{ url_for('general.login') }}">Login</a>
+    </nav
+    <main>
+    {% block content %}
+    {% endblock %}
+</main>
+<footer>
+    <a href="{{ url_for('general.terms') }}">Terms of Service</a>
+    <a href="{{ url_for('general.legal') }}">Legal Information</a>
+</footer>
+</body>
+</html>
+```

@@ -1,0 +1,95 @@
+# app.py
+from flask import Flask, render_template, request, redirect, url_for
+from models import Bank, Admin, Account
+
+app = Flask(__name__)
+
+bank = Bank("Example Bank")
+admin = Admin()
+current_user = None
+
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_panel():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'create_account':
+            name = request.form.get('name')
+            email = request.form.get('email')
+            address = request.form.get('address')
+            account_type = request.form.get('account_type')
+            admin.create_account(bank, name, email, address, account_type)
+        elif action == 'delete_account':
+            account_number = int(request.form.get('account_number'))
+            admin.delete_account(bank, account_number)
+        elif action == 'get_all_accounts':
+            accounts = admin.get_all_accounts(bank)
+            return render_template('admin.html', accounts=accounts)
+        elif action == 'get_total_balance':
+            total_balance = admin.get_total_balance(bank)
+            return render_template('admin.html', total_balance=total_balance)
+        elif action == 'get_total_loan_amount':
+            total_loan_amount = admin.get_total_loan_amount(bank)
+            return render_template('admin.html', total_loan_amount=total_loan_amount)
+        elif action == 'on_loan_feature':
+            bank.on_loan_feature()
+        elif action == 'off_loan_feature':
+            bank.off_loan_feature()
+    return render_template('admin.html')
+
+
+@app.route('/user', methods=['GET', 'POST'])
+def user_panel():
+    global current_user
+    if request.method == 'POST':
+        action = request.form.get('action')
+        if action == 'create_account':
+            name = request.form.get('name')
+            email = request.form.get('email')
+            address = request.form.get('address')
+            account_type = request.form.get('account_type')
+            current_user = bank.create_account(
+                name, email, address, account_type)
+        elif action == 'deposit':
+            amount = int(request.form.get('amount'))
+            message = current_user.deposit(amount)
+            return render_template('user.html', message=message)
+        elif action == 'withdraw':
+            amount = int(request.form.get('amount'))
+            message = current_user.withdraw(amount)
+            return render_template('user.html', message=message)
+        elif action == 'check_balance':
+            balance = current_user.check_balance()
+            return render_template('user.html', balance=balance)
+        elif action == 'transaction_history':
+            history = current_user.transaction_history()
+            return render_template('user.html', history=history)
+        elif action == 'take_loan':
+            amount = int(request.form.get('amount'))
+            message = current_user.take_loan(amount)
+            return render_template('user.html', message=message)
+        elif action == 'transfer':
+            amount = int(request.form.get('amount'))
+            recipient_account_number = int(
+                request.form.get('recipient_account_number'))
+            recipient = None
+            for user in bank.users:
+                if user.account_number == recipient_account_number:
+                    recipient = user
+                    break
+            if recipient:
+                message = current_user.transfer(amount, recipient)
+            else:
+                message = "Recipient not found."
+            return render_template('user.html', message=message)
+    return render_template('user.html')
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
+    app.run(debug=True)
